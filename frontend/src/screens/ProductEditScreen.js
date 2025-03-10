@@ -11,6 +11,7 @@ import { Helmet } from 'react-helmet-async';
 import LoadingBox from '../components/LoadingBox';
 import MessageBox from '../components/MessageBox';
 import Button from 'react-bootstrap/Button';
+import apiClient from '../apiClient';
 
 const reducer = (state, action) => {
   switch (action.type) {
@@ -68,7 +69,7 @@ export default function ProductEditScreen() {
     const fetchData = async () => {
       try {
         dispatch({ type: 'FETCH_REQUEST' });
-        const { data } = await axios.get(`/api/products/${productId}`);
+        const { data } = await apiClient.get(`/api/products/${productId}`);
         setName(data.name);
         setSlug(data.slug);
         setPrice(data.price);
@@ -93,7 +94,7 @@ export default function ProductEditScreen() {
     e.preventDefault();
     try {
       dispatch({ type: 'UPDATE_REQUEST' });
-      await axios.put(
+      await apiClient.put(
         `/api/products/${productId}`,
         {
           _id: productId,
@@ -125,27 +126,34 @@ export default function ProductEditScreen() {
     const file = e.target.files[0];
     const bodyFormData = new FormData();
     bodyFormData.append('file', file);
+  
     try {
       dispatch({ type: 'UPLOAD_REQUEST' });
-      const { data } = await axios.post('/api/upload', bodyFormData, {
+  
+      // Post file to the backend
+      const { data } = await apiClient.post('/api/upload', bodyFormData, {
         headers: {
           'Content-Type': 'multipart/form-data',
           authorization: `Bearer ${userInfo.token}`,
         },
       });
+  
       dispatch({ type: 'UPLOAD_SUCCESS' });
-
+  
+      // Use the returned S3 URL (data.url) in your application
       if (forImages) {
-        setImages([...images, data.secure_url]);
+        setImages([...images, data.url]);
       } else {
-        setImage(data.secure_url);
+        setImage(data.url);
       }
-      toast.success('Image uploaded successfully. click Update to apply it');
+  
+      toast.success('Image uploaded successfully. Click Update to apply it');
     } catch (err) {
       toast.error(getError(err));
       dispatch({ type: 'UPLOAD_FAIL', payload: getError(err) });
     }
   };
+  
   const deleteFileHandler = async (fileName, f) => {
     console.log(fileName, f);
     console.log(images);

@@ -36,6 +36,7 @@ import UserEditScreen from './screens/UserEditScreen';
 import MapScreen from './screens/MapScreen';
 import ForgetPasswordScreen from './screens/ForgetPasswordScreen';
 import ResetPasswordScreen from './screens/ResetPasswordScreen';
+import apiClient from './apiClient';
 
 function App() {
   const { state, dispatch: ctxDispatch } = useContext(Store);
@@ -54,7 +55,7 @@ function App() {
   useEffect(() => {
     const fetchCategories = async () => {
       try {
-        const { data } = await axios.get(`/api/products/categories`);
+        const { data } = await apiClient.get(`/api/products/categories`);
         setCategories(data);
       } catch (err) {
         toast.error(getError(err));

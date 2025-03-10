@@ -1,0 +1,78 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Launch EC2 with Docker Compose and DocumentDB cluster integration.
+
+
+  
+
+Resources:
+
+  FGEC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t2.micro
+      ImageId: ami-0c02fb55956c7d316 # Amazon Linux 2 AMI (update with region-specific AMI)
+      KeyName: ec2 # Replace with your EC2 Key Pair name
+      SecurityGroupIds:
+        - !Ref FGSecurityGroup
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          # Update packages
+          yum update -y
+          # Install Docker
+          amazon-linux-extras enable docker
+          yum install docker -y
+          service docker start
+          usermod -a -G docker ec2-user
+          # Install jq for JSON parsing
+          yum install -y jq
+          # Install Docker Compose
+          curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          chmod +x /usr/local/bin/docker-compose
+          ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
+          # Create app directory
+          mkdir -p /home/ec2-user/app
+          cd /home/ec2-user/app
+
+          # Write the docker-compose.yml
+          cat <<EOF > docker-compose.yml
+          version: '3.8'
+          services:
+            
+            frontend:
+              image: ayushi9799/amazona-frontend
+              ports:
+                - "3000:3000"
+          
+          EOF
+
+          # Run Docker Compose
+          sudo docker-compose up -d
+
+  FGSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable access to Docker Compose services and HTTP
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0 # Allow SSH (update this to restrict access)
+        - IpProtocol: tcp
+          FromPort: 3000
+          ToPort: 3000
+          CidrIp: 0.0.0.0/0 # Allow access to frontend
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0 # Allow HTTP access
+
+  
+Outputs:
+  FGInstancePublicIP:
+    Description: Public IP of the EC2 instance
+    Value: !GetAtt FGEC2Instance.PublicIp
+    Export:
+      Name: FGInstancePublicIP
+
+  

@@ -1,0 +1,263 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Launch EC2 with Docker Compose and DocumentDB cluster integration.
+
+Resources:
+  MyInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - EC2Role
+
+  BEEC2Instance:
+    Type: AWS::EC2::Instance
+    DependsOn:
+      - DocumentDBCluster
+      - DocumentDBInstance1
+    Properties:
+      InstanceType: t2.micro
+      ImageId: ami-0c02fb55956c7d316 # Amazon Linux 2 AMI (update with region-specific AMI)
+      KeyName: ec2 # Replace with your EC2 Key Pair name
+      IamInstanceProfile: !Ref MyInstanceProfile
+      SecurityGroupIds:
+        - !Ref BESecurityGroup
+      Tags:
+        - Key: Name
+          Value: BackendInstance
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          yum update -y
+          amazon-linux-extras enable docker
+          yum install docker -y
+          service docker start
+          usermod -a -G docker ec2-user
+          yum install -y jq
+          curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          chmod +x /usr/local/bin/docker-compose
+          ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
+          mkdir -p /home/ec2-user/app
+          cd /home/ec2-user/app
+
+          AWS_REGION=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" "http://169.254.169.254/latest/meta-data/placement/region")
+
+          echo "AWS_DEFAULT_REGION=$AWS_REGION" >> /etc/environment
+          echo "BUCKET_NAME=amazonabucket5411" >> /etc/environment
+          source /etc/environment
+
+          cat <<EOF > docker-compose.yml
+          version: '3.8'
+          services:
+            backend:
+              image: ayushi9799/amazona-backend
+              ports:
+                - "4000:4000"
+              environment:
+                - DOCUMENTDB_URI=${DocumentDBCluster.Endpoint}:27017
+                - AWS_DEFAULT_REGION=$AWS_REGION
+                - BUCKET_NAME=amazonabucket5411
+          EOF
+
+          sudo docker-compose up -d
+
+  BESecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable access to Docker Compose services and HTTP
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 4000
+          ToPort: 4000
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+
+  DocumentDBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for DocumentDB cluster
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 27017
+          ToPort: 27017
+          SourceSecurityGroupId: !GetAtt BESecurityGroup.GroupId
+
+  # SecretsManagerRole:
+  #   Type: AWS::IAM::Role
+  #   Properties:
+  #     AssumeRolePolicyDocument:
+  #       Version: "2012-10-17"
+  #       Statement:
+  #         - Effect: Allow
+  #           Principal:
+  #             Service: secretsmanager.amazonaws.com
+  #           Action: "sts:AssumeRole"
+  #     Policies:
+  #       - PolicyName: SecretsAccessPolicy
+  #         PolicyDocument:
+  #           Version: "2012-10-17"
+  #           Statement:
+  #             - Effect: Allow
+  #               Action:
+  #                 - secretsmanager:GetSecretValue
+  #                 - secretsmanager:PutSecretValue
+  #               Resource: "arn:aws:secretsmanager:us-east-1:851725319102:secret:documentDBCreds-XnppBf"
+
+  MyDocDBClusterRotationSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: documentDBCredsAmazona
+      Description: "Dynamically generated credentials for Amazon DocumentDB"
+      GenerateSecretString:
+        SecretStringTemplate: !Sub |
+          {
+            "DOCUMENTDB_USER": "amazona"
+          }
+        GenerateStringKey: "DOCUMENTDB_PASSWORD"
+        PasswordLength: 16
+        ExcludeCharacters: "\"@/\\'" # Customize as needed
+      Tags:
+        - Key: Environment
+          Value: Production
+
+  DocumentDBCluster:
+    Type: AWS::DocDB::DBCluster
+    Properties:
+      MasterUsername: !Sub '{{resolve:secretsmanager:${MyDocDBClusterRotationSecret}::DOCUMENTDB_USER}}'
+      MasterUserPassword: !Sub '{{resolve:secretsmanager:${MyDocDBClusterRotationSecret}::DOCUMENTDB_PASSWORD}}'
+      EngineVersion: "4.0.0"
+      VpcSecurityGroupIds:
+        - !GetAtt DocumentDBSecurityGroup.GroupId
+
+  DocumentDBInstance1:
+    Type: AWS::DocDB::DBInstance
+    Properties:
+      DBClusterIdentifier: !Ref DocumentDBCluster
+      DBInstanceClass: db.r5.large
+
+  S3Bucket:
+    Type: "AWS::S3::Bucket"
+    Properties:
+      BucketName: "amazonabucket5411"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: false
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: false
+
+  S3BucketPolicy:
+    Type: "AWS::S3::BucketPolicy"
+    Properties:
+      Bucket: !Ref S3Bucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+            - Effect: "Allow"
+              Principal: "*"
+              Action: "s3:GetObject"
+              Resource: 
+                Fn::Join:
+                  - ""
+                  - - "arn:aws:s3:::"
+                    - !Ref S3Bucket
+                    - "/uploads/*"
+
+  FEEC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t2.micro
+      ImageId: ami-0c02fb55956c7d316 # Amazon Linux 2 AMI (update with region-specific AMI)
+      KeyName: ec2 # Replace with your EC2 Key Pair name
+      IamInstanceProfile: !Ref MyInstanceProfile
+      SecurityGroupIds:
+        - !Ref FESecurityGroup
+      Tags:
+        - Key: Name
+          Value: FrontendInstance
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          yum update -y
+          amazon-linux-extras enable docker
+          yum install docker -y
+          service docker start
+          usermod -a -G docker ec2-user
+          yum install -y jq
+          curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          chmod +x /usr/local/bin/docker-compose
+          ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
+          mkdir -p /home/ec2-user/app
+          cd /home/ec2-user/app
+
+          BACKEND_PUBLIC_IP=${BEEC2Instance.PublicIp}
+          cat <<EOF > docker-compose.yml
+          version: '3.8'
+          services:  
+            frontend:
+              image: ayushi9799/amazona-frontend
+              ports:
+                - "3000:3000"
+              environment:
+                - REACT_APP_API_BASE_URL=http://$BACKEND_PUBLIC_IP:4000
+          EOF
+
+          sudo docker-compose up -d
+
+  FESecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable access to Docker Compose services and HTTP
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 3000
+          ToPort: 3000
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+
+  FESecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable access to Docker Compose services and HTTP for frontend
+      VpcId: !Ref MernAmazonaVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 3000
+          ToPort: 3000
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: FESecurityGroup
+
+
+Outputs:
+  BEInstancePublicIP:
+    Description: Public IP of the Backend EC2 instance
+    Value: !GetAtt BEEC2Instance.PublicIp
+
+  FEInstancePublicIP:
+    Description: Public IP of the Frontend EC2 instance
+    Value: !GetAtt FEEC2Instance.PublicIp
+
+  DocumentDBClusterEndpoint:
+    Description: DocumentDB cluster connection endpoint
+    Value: !GetAtt DocumentDBCluster.Endpoint

@@ -1,0 +1,724 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CloudFormation Template to create a VPC with CIDR 10.0.0.0/16
+
+Resources:
+
+  S3Bucket:
+    Type: "AWS::S3::Bucket"
+    Properties:
+      BucketName: "mernamazonabucket5411"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: false
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: false
+
+  S3BucketPolicy:
+    Type: "AWS::S3::BucketPolicy"
+    Properties:
+      Bucket: !Ref S3Bucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+            - Effect: "Allow"
+              Principal: "*"
+              Action: "s3:GetObject"
+              Resource: 
+                Fn::Join:
+                  - ""
+                  - - "arn:aws:s3:::"
+                    - !Ref S3Bucket
+                    - "/uploads/*"
+
+  MernAmazonaVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: MernAmazonaVPC
+
+  MernAmazonaInternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: MernAmazonaInternetGateway
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref MernAmazonaVPC
+      InternetGatewayId: !Ref MernAmazonaInternetGateway
+
+  NatEIP1:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  NatEIP2:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  # NAT Gateway
+  MernAmazonaNatGateway1:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatEIP1.AllocationId
+      SubnetId: !Ref AmazonaPublicSubnet1
+      Tags:
+        - Key: Name
+          Value: MernAmazonaNatGateway1
+
+  MernAmazonaNatGateway2:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatEIP2.AllocationId
+      SubnetId: !Ref AmazonaPublicSubnet2
+      Tags:
+        - Key: Name
+          Value: MernAmazonaNatGateway2       
+
+  AmazonaPublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MernAmazonaVPC
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: us-east-1a
+      Tags:
+        - Key: Name
+          Value: AmazonaPublicSubnet1
+
+  AmazonaPublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MernAmazonaVPC
+      CidrBlock: 10.0.3.0/24
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: us-east-1b
+      Tags:
+        - Key: Name
+          Value: AmazonaPublicSubnet2
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MernAmazonaVPC
+      Tags:
+        - Key: Name
+          Value: PublicRouteTable
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref MernAmazonaInternetGateway
+
+  PublicSubnetRouteTableAssociation1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref AmazonaPublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnetRouteTableAssociation2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref AmazonaPublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  AmazonaPrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MernAmazonaVPC
+      CidrBlock: 10.0.2.0/24
+      MapPublicIpOnLaunch: false
+      AvailabilityZone: us-east-1a
+      Tags:
+        - Key: Name
+          Value: AmazonaPrivateSubnet1
+
+  AmazonaPrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MernAmazonaVPC
+      CidrBlock: 10.0.4.0/24
+      MapPublicIpOnLaunch: false
+      AvailabilityZone: us-east-1b
+      Tags:
+        - Key: Name
+          Value: AmazonaPrivateSubnet2
+
+  PrivateRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MernAmazonaVPC
+      Tags:
+        - Key: Name
+          Value: PrivateRouteTable1
+
+  PrivateRouteTable2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MernAmazonaVPC
+      Tags:
+        - Key: Name
+          Value: PrivateRouteTable2
+  
+  PrivateRoute1:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref MernAmazonaNatGateway1
+
+  PrivateRoute2:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref MernAmazonaNatGateway2
+
+  PrivateSubnetRouteTableAssociation1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref AmazonaPrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable1
+
+  PrivateSubnetRouteTableAssociation2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref AmazonaPrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable2
+
+  MyInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - EC2Role
+  
+  BESecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTP to client host
+      VpcId: !Ref MernAmazonaVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 4000
+          ToPort: 4000
+          SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: BESecurityGroup
+
+  DocumentDBSubnetGroup:
+    Type: "AWS::DocDB::DBSubnetGroup"
+    Properties:
+      DBSubnetGroupDescription: "Private subnet group for DocumentDB"
+      SubnetIds:
+        - !Ref AmazonaPrivateSubnet1
+        - !Ref AmazonaPrivateSubnet2
+      DBSubnetGroupName: "documentdb-subnet-group"
+
+  DocumentDBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for DocumentDB cluster
+      VpcId: !Ref MernAmazonaVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 27017
+          ToPort: 27017
+          SourceSecurityGroupId: !GetAtt BESecurityGroup.GroupId
+
+  DocDBClusterRotationSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: documentDBCredsAmazona
+      Description: "Credentials for Amazon DocumentDB"
+      SecretString: !Sub |
+        {
+          "DOCUMENTDB_USER": "amazona",
+          "DOCUMENTDB_PASSWORD": "mernamazona"
+        }
+      Tags:
+        - Key: Environment
+          Value: Production
+
+
+  DocumentDBCluster:
+    Type: AWS::DocDB::DBCluster
+    Properties:
+      MasterUsername: !Sub '{{resolve:secretsmanager:${DocDBClusterRotationSecret}::DOCUMENTDB_USER}}'
+      MasterUserPassword: !Sub '{{resolve:secretsmanager:${DocDBClusterRotationSecret}::DOCUMENTDB_PASSWORD}}'
+      EngineVersion: "4.0.0"
+      DBSubnetGroupName: !Ref DocumentDBSubnetGroup
+      VpcSecurityGroupIds:
+        - !GetAtt DocumentDBSecurityGroup.GroupId
+
+  DocumentDBInstance1:
+    Type: AWS::DocDB::DBInstance
+    Properties:
+      DBClusterIdentifier: !Ref DocumentDBCluster
+      DBInstanceClass: db.r5.large
+
+  LoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTP traffic from anywhere
+      VpcId: !Ref MernAmazonaVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: LoadBalancerSecurityGroup
+
+
+  BEALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: BEALB
+      Scheme: internet-facing
+      Subnets:
+        - !Ref AmazonaPublicSubnet1
+        - !Ref AmazonaPublicSubnet2
+      SecurityGroups:
+        - !Ref LoadBalancerSecurityGroup
+      Tags:
+        - Key: Name
+          Value: BEALB
+
+  BEALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: BEALBTargetGroup
+      TargetType: instance
+      Protocol: HTTP
+      Port: 4000
+      VpcId: !Ref MernAmazonaVPC
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: /health
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 3
+      UnhealthyThresholdCount: 2
+      Tags:
+        - Key: Name
+          Value: BEALBTargetGroup
+
+  
+  BEALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref BEALB
+      Protocol: HTTP
+      Port: 80
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref BEALBTargetGroup
+
+
+  BEAutoScalingLaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      InstanceType: t2.micro
+      ImageId: ami-0c02fb55956c7d316
+      KeyName: mernamazona
+      SecurityGroups:
+        - !Ref BESecurityGroup
+      IamInstanceProfile: !Ref MyInstanceProfile
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          yum update -y
+          amazon-linux-extras enable docker
+          yum install docker -y
+          service docker start
+          usermod -a -G docker ec2-user
+          yum install -y jq
+          curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          chmod +x /usr/local/bin/docker-compose
+          ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
+          mkdir -p /home/ec2-user/app
+          cd /home/ec2-user/app
+          AWS_REGION=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" "http://169.254.169.254/latest/meta-data/placement/region")
+          echo "AWS_DEFAULT_REGION=$AWS_REGION" >> /etc/environment
+          echo "BUCKET_NAME=mernamazonabucket5411" >> /etc/environment
+          source /etc/environment
+          cat <<EOF > docker-compose.yml
+          version: '3.8'
+          services:
+            backend:
+              image: ayushi9799/amazona-backend
+              ports:
+                - "4000:4000"
+              environment:
+                - DOCUMENTDB_URI=${DocumentDBCluster.Endpoint}:27017
+                - AWS_DEFAULT_REGION=$AWS_REGION
+                - BUCKET_NAME=mernamazonabucket5411
+          EOF
+          sudo docker-compose up -d
+
+  BEAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    DependsOn:
+      - DocumentDBCluster
+      - DocumentDBInstance1
+    Properties:
+      VPCZoneIdentifier:
+        - !Ref AmazonaPrivateSubnet1
+        - !Ref AmazonaPrivateSubnet2
+      LaunchConfigurationName: !Ref BEAutoScalingLaunchConfig
+      MinSize: 1
+      MaxSize: 3
+      DesiredCapacity: 1
+      TargetGroupARNs:
+        - !Ref BEALBTargetGroup
+      Tags:
+        - Key: Name
+          Value: BEAutoScalingGroup
+          PropagateAtLaunch: true
+
+  BackendTargetTrackingPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref BEAutoScalingGroup
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        TargetValue: 50  # Target 50% CPU Utilization
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ASGAverageCPUUtilization
+ 
+
+  FESecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable access to Docker Compose services and HTTP for frontend
+      VpcId: !Ref MernAmazonaVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 3000
+          ToPort: 3000
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: FESecurityGroup
+
+  FEALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: mernamazona
+      Scheme: internet-facing
+      Subnets:
+        - !Ref AmazonaPublicSubnet1
+        - !Ref AmazonaPublicSubnet2
+      SecurityGroups:
+        - !Ref FESecurityGroup
+      Tags:
+        - Key: Name
+          Value: mernamazona
+
+  FEALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: FEALBTargetGroup
+      TargetType: instance
+      Protocol: HTTP
+      Port: 3000
+      VpcId: !Ref MernAmazonaVPC
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: /
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 3
+      UnhealthyThresholdCount: 2
+      Tags:
+        - Key: Name
+          Value: FEALBTargetGroup
+
+  FEALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref FEALB
+      Protocol: HTTP
+      Port: 80
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref FEALBTargetGroup
+
+
+  FEAutoScalingLaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      InstanceType: t2.micro
+      ImageId: ami-0c02fb55956c7d316 # Amazon Linux 2 AMI
+      KeyName: ec2 # Replace with your EC2 Key Pair name
+      SecurityGroups:
+        - !Ref FESecurityGroup
+      IamInstanceProfile: !Ref MyInstanceProfile
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          yum update -y
+          amazon-linux-extras enable docker
+          yum install docker -y
+          service docker start
+          usermod -a -G docker ec2-user
+          yum install -y jq
+          curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          chmod +x /usr/local/bin/docker-compose
+          ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
+          mkdir -p /home/ec2-user/app
+          cd /home/ec2-user/app
+
+          cat <<EOF > docker-compose.yml
+          version: '3.8'
+          services:
+            frontend:
+              image: ayushi9799/amazona-frontend
+              ports:
+                - "3000:3000"
+              environment:
+                - REACT_APP_API_BASE_URL=http://${BEALB.DNSName}
+          EOF
+
+          sudo docker-compose up -d
+
+  FEAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    DependsOn:
+      - BEALB
+      - BEALBListener
+    Properties:
+      VPCZoneIdentifier:
+        - !Ref AmazonaPublicSubnet1
+        - !Ref AmazonaPublicSubnet2
+      LaunchConfigurationName: !Ref FEAutoScalingLaunchConfig
+      MinSize: 1
+      MaxSize: 3
+      DesiredCapacity: 1
+      TargetGroupARNs:
+        - !Ref FEALBTargetGroup
+      Tags:
+        - Key: Name
+          Value: FEAutoScalingGroup
+          PropagateAtLaunch: true
+
+  FrontendTargetTrackingPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref FEAutoScalingGroup
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        TargetValue: 50  # Target 50% CPU Utilization
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ASGAverageCPUUtilization
+
+
+  FrontendBackendSNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: FrontendBackendAlarmTopic
+      Subscription:
+        - Protocol: email  
+          Endpoint: ayushimalhotra1999@gmail.com  # Replace with your email address
+
+
+  FrontendCPUAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: FrontendCPUHigh
+      AlarmDescription: "Alarm when frontend ASG CPU exceeds 50% for 5 minutes"
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: 300  # 5 minutes
+      EvaluationPeriods: 1
+      Threshold: 20  # CPU utilization threshold in percent
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: !Ref FEAutoScalingGroup
+      AlarmActions:
+        - !Ref FrontendBackendSNSTopic
+
+  BackendCPUAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: BackendCPUHigh
+      AlarmDescription: "Alarm when backend ASG CPU exceeds 50% for 5 minutes"
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: 300  # 5 minutes
+      EvaluationPeriods: 1
+      Threshold: 20  # CPU utilization threshold in percent
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: !Ref BEAutoScalingGroup
+      AlarmActions:
+        - !Ref FrontendBackendSNSTopic
+
+  FrontendLoadBalancerHealthCheckAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: FrontendLoadBalancerHealthCheck
+      AlarmDescription: "Alarm when the health check for the frontend load balancer fails"
+      MetricName: HealthyHostCount
+      Namespace: AWS/ApplicationELB
+      Statistic: Average
+      Period: 60  # Check every minute
+      EvaluationPeriods: 1  # Trigger after one consecutive failure
+      Threshold: 1  # At least 1 healthy host
+      ComparisonOperator: LessThanThreshold
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !GetAtt FEALB.LoadBalancerFullName
+        - Name: TargetGroup
+          Value: !GetAtt FEALBTargetGroup.TargetGroupFullName
+      AlarmActions:
+        - !Ref FrontendBackendSNSTopic
+
+  BackendLoadBalancerHealthCheckAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: BackendLoadBalancerHealthCheck
+      AlarmDescription: "Alarm when the health check for the backend load balancer fails"
+      MetricName: HealthyHostCount
+      Namespace: AWS/ApplicationELB
+      Statistic: Average
+      Period: 60  # Check every minute
+      EvaluationPeriods: 1  # Trigger after one consecutive failure
+      Threshold: 1  # At least 1 healthy host
+      ComparisonOperator: LessThanThreshold
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !GetAtt BEALB.LoadBalancerFullName
+        - Name: TargetGroup
+          Value: !GetAtt BEALBTargetGroup.TargetGroupFullName
+      AlarmActions:
+        - !Ref FrontendBackendSNSTopic
+
+  FrontendLatencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: FrontendHighLatency
+      AlarmDescription: "Alarm for high request latency on the Frontend Load Balancer"
+      MetricName: TargetResponseTime
+      Namespace: AWS/ApplicationELB
+      Statistic: Average
+      Period: 60  # Evaluate every 60 seconds
+      EvaluationPeriods: 1  # Trigger the alarm after one consecutive period
+      Threshold: 1  # Threshold in seconds (set your desired latency threshold)
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !GetAtt FEALB.LoadBalancerFullName
+      AlarmActions:
+        - !Ref FrontendBackendSNSTopic
+
+  BackendLatencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: BackendHighLatency
+      AlarmDescription: "Alarm for high request latency on the Backend Load Balancer"
+      MetricName: TargetResponseTime
+      Namespace: AWS/ApplicationELB
+      Statistic: Average
+      Period: 60  # Evaluate every 60 seconds
+      EvaluationPeriods: 1  # Trigger the alarm after one consecutive period
+      Threshold: 1  # Threshold in seconds (set your desired latency threshold)
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !GetAtt BEALB.LoadBalancerFullName
+      AlarmActions:
+        - !Ref FrontendBackendSNSTopic
+
+  # MyHostedZone:
+  #   Type: AWS::Route53::HostedZone
+  #   Properties:
+  #     Name: mernamazona5411.ca  # Replace with your domain name
+
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Origins:
+          - Id: FEALB
+            DomainName: !GetAtt FEALB.DNSName
+            CustomOriginConfig:
+              OriginProtocolPolicy: http-only  # or https-only
+        DefaultCacheBehavior:
+          TargetOriginId: FEALB
+          ViewerProtocolPolicy: allow-all
+          ForwardedValues:
+            QueryString: true
+            Cookies:
+              Forward: all
+        Enabled: true
+        WebACLId: !GetAtt MyWebACL.Arn 
+
+  MyWebACL:
+    Type: AWS::WAFv2::WebACL
+    Properties:
+      Name: MyWebACL
+      Scope: CLOUDFRONT
+      DefaultAction:
+        Allow: {}  # Default action can be Block or Allow
+      VisibilityConfig:
+        SampledRequestsEnabled: true
+        CloudWatchMetricsEnabled: true
+        MetricName: MyWebACLMetric
+      Rules:
+        - Name: BlockSQLInjection
+          Priority: 1
+          Statement:
+            SqliMatchStatement:
+              FieldToMatch:
+                UriPath: {}
+              TextTransformations:
+                - Type: NONE
+                  Priority: 0
+          Action:
+            Block: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: BlockSQLInjectionMetric
+
+  # Route53RecordSet:
+  #   Type: AWS::Route53::RecordSet
+  #   Properties:
+  #     HostedZoneId: !Ref MyHostedZone
+  #     Name: www.mernamazona5411.ca  
+  #     Type: A
+  #     AliasTarget:
+  #       DNSName: !GetAtt CloudFrontDistribution.DomainName
+  #       HostedZoneId: Z2FDTNDATAQYW2

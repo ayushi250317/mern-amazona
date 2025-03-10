@@ -8,6 +8,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { Store } from '../Store';
 import { getError } from '../utils';
+import apiClient from '../apiClient';
 
 export default function ResetPasswordScreen() {
   const navigate = useNavigate();
@@ -32,7 +33,7 @@ export default function ResetPasswordScreen() {
       return;
     }
     try {
-      await Axios.post('/api/users/reset-password', {
+      await apiClient.post('/api/users/reset-password', {
         password,
         token,
       });
